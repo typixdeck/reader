@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "repository": "typixdeck/reader",
+  "distribution": "complete-deb",
+  "application": {
+    "id": "ai.typixdeck.reader",
+    "package": "typix-reader",
+    "name": {
+      "zh-CN": "Typix 阅读器",
+      "en": "Typix Reader"
+    },
+    "summary": {
+      "zh-CN": "本地阅读与 Calibre OPDS 在线书库"
+    },
+    "description": {
+      "zh-CN": "完整 GTK3 阅读器，支持 TXT、Markdown、EPUB 与 CBZ，书架、目录、搜索和阅读进度。支持用户自己的 Calibre OPDS 分类、搜索、分页、认证与下载；没有内置测试书库。"
+    },
+    "categories": [
+      "Office"
+    ],
+    "desktopFile": "typix-reader.desktop",
+    "runtime": {
+      "kind": "python-module",
+      "module": "typix_reader",
+      "root": "/usr/lib/python3/dist-packages"
+    },
+    "requiredPayload": [
+      "/usr/bin/typix-reader",
+      "/usr/lib/python3/dist-packages/typix_reader/__init__.py",
+      "/usr/lib/python3/dist-packages/typix_reader/__main__.py",
+      "/usr/lib/python3/dist-packages/typix_reader/app.py",
+      "/usr/lib/python3/dist-packages/typix_reader/formats.py",
+      "/usr/lib/python3/dist-packages/typix_reader/navigation.py",
+      "/usr/lib/python3/dist-packages/typix_reader/state.py",
+      "/usr/share/typix-reader/typix-reader.css",
+      "/usr/lib/python3/dist-packages/typix_reader/opds.py",
+      "/usr/lib/python3/dist-packages/typix_reader/opds_ui.py"
+    ],
+    "compatibility": {
+      "arch": [
+        "arm64"
+      ],
+      "minMemoryMB": 128,
+      "minFreeDiskMB": 64,
+      "display": [
+        "wayland",
+        "x11"
+      ],
+      "requiredFeatures": []
+    }
+  },
+  "release": {
+    "version": "0.3.0-1",
+    "file": "dist/typix-reader_0.3.0-1_all.deb",
+    "sha256": "b8c887b7cff113bd8982b54e05e548ad099d8e23d3c085f13206f0db40488ec9"
+  },
+  "screenshots": [
+    {
+      "path": "docs/screenshots/reader-shelf.png",
+      "caption": "最近书架与继续阅读"
+    },
+    {
+      "path": "docs/screenshots/reader-reading.png",
+      "caption": "原创短文《海风与书页》的阅读界面"
+    },
+    {
+      "path": "docs/screenshots/reader-opds.png",
+      "caption": "使用原创条目的 OPDS 演示书库"
+    }
+  ]
+}

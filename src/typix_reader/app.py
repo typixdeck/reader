@@ -16,6 +16,7 @@ from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 from .formats import Document, LoadCancelled, ReaderFormatError, load_document, read_image
 from .navigation import find_next
 from .state import load_state, save_state
+from .opds_ui import OPDSMixin
 
 APP_ID = "ai.typixdeck.reader"
 
@@ -25,7 +26,7 @@ def css_path() -> Path:
     return source if source.exists() else Path("/usr/share/typix-reader/typix-reader.css")
 
 
-class ReaderApplication(Gtk.Application):
+class ReaderApplication(OPDSMixin, Gtk.Application):
     def __init__(self) -> None:
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.window: Gtk.ApplicationWindow | None = None
@@ -84,7 +85,7 @@ class ReaderApplication(Gtk.Application):
             if path:
                 self.open_path(Path(path))
             else:
-                self.message("请选择本地文件；阅读器不会下载远程图书。")
+                self.message("请选择本地文件，或通过“在线书库”浏览 Calibre OPDS。")
 
     def button(self, label: str, callback, tooltip: str = "") -> Gtk.Button:
         button = Gtk.Button(label=label)
@@ -129,6 +130,7 @@ class ReaderApplication(Gtk.Application):
         identity.set_hexpand(True)
         identity.set_size_request(90, -1)
         header.pack_start(identity, True, True, 0)
+        header.pack_start(self.button("在线书库", self.show_opds, "连接 Calibre OPDS 书库"), False, False, 0)
         header.pack_start(self.button("书架", self.show_shelf, "返回书架 · Esc"), False, False, 0)
         header.pack_start(self.button("打开文件", self.choose_file, "打开本地 TXT / Markdown / EPUB / CBZ · Ctrl+O"), False, False, 0)
         header.pack_start(self.button("返回桌面", self.close_reader, "保存进度并返回桌面 · Ctrl+Q"), False, False, 0)
@@ -148,6 +150,7 @@ class ReaderApplication(Gtk.Application):
         root.pack_start(self.main_stack, True, True, 0)
         self.build_shelf()
         self.build_reading()
+        self.build_opds()
         loading = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         loading.set_halign(Gtk.Align.CENTER)
         loading.set_valign(Gtk.Align.CENTER)
@@ -252,6 +255,7 @@ class ReaderApplication(Gtk.Application):
         self.content_stack = Gtk.Stack()
         self.content_scroll = Gtk.ScrolledWindow()
         self.content_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.content_scroll.set_overlay_scrolling(False)
         self.text_view = Gtk.TextView()
         self.text_view.set_name("book-text")
         self.text_view.set_editable(False)
@@ -731,6 +735,12 @@ class ReaderApplication(Gtk.Application):
             if key in actions:
                 actions[key]()
                 return True
+        if key == Gdk.KEY_Escape and self.main_stack.get_visible_child_name() == "opds":
+            if self.opds_busy:
+                self.opds_cancel_request()
+            else:
+                self.opds_return()
+            return True
         if key == Gdk.KEY_Escape:
             if self.main_stack.get_visible_child_name() == "loading":
                 self.cancel_open()

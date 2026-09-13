@@ -22,3 +22,8 @@ entry { background-image: none; background-color: #1d242d; color: #e8eaed; borde
 scrollbar trough { background-color: #14181e; }
 scrollbar slider { background-color: #495360; min-width: 6px; min-height: 24px; }
 infobar { color: #eceddf; background-color: #454029; }
+
+.opds-list { background-color: #101216; color: #e8eaed; }
+.opds-list row { background-color: #1a1f26; color: #e8eaed; border: 1px solid #2b323d; border-radius: 8px; margin-bottom: 6px; }
+.opds-list row:selected { background-color: #293a2b; border-color: #8cae70; color: #f4ffe9; }
+.opds-list row:focus { outline-color: #bce4a3; outline-width: 2px; outline-style: solid; outline-offset: -3px; }
