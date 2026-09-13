@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=TypixDeck 阅读器
+Comment=Local TXT, Markdown, EPUB, and CBZ reader
+Exec=/usr/bin/typix-reader %f
+Icon=accessories-text-editor
+Terminal=false
+Categories=Office;Viewer;
+StartupNotify=true
+MimeType=text/plain;text/markdown;application/epub+zip;application/vnd.comicbook+zip;
+X-TypixDeck-LaunchMode=supervised
+X-TypixDeck-Fullscreen=true
+X-TypixDeck-FullscreenAppId=ai.typixdeck.reader

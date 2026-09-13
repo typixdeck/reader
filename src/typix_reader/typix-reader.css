@@ -1,0 +1,24 @@
+window { background-color: #101216; color: #e8eaed; }
+.header { background-color: #14181e; border-bottom: 1px solid #2b3039; }
+.app-title { font-size: 19px; font-weight: 700; }
+.shelf-title { font-size: 28px; font-weight: 700; color: #f4f5f7; }
+.section-title { font-size: 19px; font-weight: 600; }
+.book-title { font-size: 16px; font-weight: 600; }
+.muted { color: #a5adb9; font-size: 12px; }
+.accent { color: #bce4a3; font-size: 13px; font-weight: 600; }
+button { background-image: none; background-color: #242a33; color: #e8eaed; border: 1px solid #38404c; border-radius: 8px; padding: 8px 12px; box-shadow: none; text-shadow: none; }
+button:hover { background-color: #313b46; }
+button:active { background-color: #3c4957; }
+button:focus { border-color: #bce4a3; outline-color: #bce4a3; outline-offset: 2px; outline-width: 2px; outline-style: solid; }
+button:disabled { color: #707886; background-color: #1a1f26; border-color: #2a3038; }
+.resume-card { background-color: #202c28; border-color: #455a47; padding: 0; }
+.resume-card:hover { background-color: #2a3830; }
+.book-row { background-color: #1a1f26; border-color: #2b323d; padding: 0; }
+#book-text, #book-text text { background-color: #161a20; color: #e8eaed; }
+#book-text text selection { background-color: #5c713f; color: #ffffff; }
+treeview { background-color: #171c22; color: #ccd1d9; padding: 6px; }
+treeview:selected { background-color: #354534; color: #edffe5; }
+entry { background-image: none; background-color: #1d242d; color: #e8eaed; border-color: #46515f; padding: 8px; }
+scrollbar trough { background-color: #14181e; }
+scrollbar slider { background-color: #495360; min-width: 6px; min-height: 24px; }
+infobar { color: #eceddf; background-color: #454029; }
