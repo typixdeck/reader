@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-VERSION=${VERSION:-0.3.0-1}
+VERSION=${VERSION:-0.4.0-1}
 STAGE="$ROOT/build/package"
 DIST="$ROOT/dist"
 rm -rf "$STAGE"
@@ -13,10 +13,10 @@ Architecture: all
 Maintainer: TypixDeck <dev@typixnode.com>
 Section: text
 Priority: optional
-Depends: python3 (>= 3.11), python3-gi, gir1.2-gtk-3.0, gir1.2-gdkpixbuf-2.0, ca-certificates
+Depends: python3 (>= 3.11), python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-gdkpixbuf-2.0, gir1.2-poppler-0.18, libmobi-tools (>= 0.11), ca-certificates
 X-Typix-Compatible-OS: raspios-bookworm,raspios-trixie
 Description: Local-first TypixDeck reader
- Native GTK3 reader for TXT, Markdown, EPUB, CBZ, and Calibre OPDS.
+ Native GTK3 reader for TXT, Markdown, EPUB, CBZ, PDF, Kindle and OPDS.
  Downloads are user-initiated; documents and progress remain on-device.
 CONTROL
 printf '%s\n' 'Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/' 'Upstream-Name: typix-reader' > "$STAGE/usr/share/doc/typix-reader/copyright"

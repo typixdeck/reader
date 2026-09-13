@@ -1,13 +1,29 @@
 """Keyboard-accessible Calibre browser integrated with the local Reader."""
 from pathlib import Path
+import unicodedata
 
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
-from .formats import LoadCancelled, load_document
+from .formats import LoadCancelled, ReaderFormatError, load_document
 from .opds import Client, OPDSError, load_server, save_server
 from .state import state_path
+
+
+def download_error_message(error: Exception) -> str:
+    """Show bounded parser guidance, never raw transport/OS exception details.
+
+    ReaderFormatError and OPDSError carry messages written by our parsers.
+    GTK displays this as plain label text; remove control/bidi characters as
+    well so an error cannot alter surrounding UI or create an unbounded label.
+    """
+    detail = ""
+    if isinstance(error, (ReaderFormatError, OPDSError)):
+        text = str(error)[:1024]
+        detail = " ".join("".join(" " if unicodedata.category(char).startswith("C") else char
+                                   for char in text).split())[:320]
+    return ((detail + "\n") if detail else "下载的图书无法打开。\n") + "原有图书与阅读进度保留。"
 
 
 class OPDSMixin:
@@ -173,7 +189,7 @@ class OPDSMixin:
         self.opds_list.show_all()
         self.opds_breadcrumbs.show_all()
         self.opds_set_busy(False)
-        self.status_label.set_text(f"{len(self.opds_feed.entries)} 项 · 下载支持 EPUB / TXT / Markdown / CBZ · Esc 返回阅读")
+        self.status_label.set_text(f"{len(self.opds_feed.entries)} 项 · 支持 EPUB / TXT / Markdown / CBZ / PDF / Kindle · Esc 返回阅读")
         row = self.opds_list.get_row_at_index(0)
         if row:
             self.opds_list.select_row(row)
@@ -204,7 +220,7 @@ class OPDSMixin:
             if entry.navigation:
                 self.opds_browse(entry.navigation.url, descend=True)
             else:
-                self.message("此条目没有可直接下载的支持格式；不支持 PDF、AZW、MOBI、借阅和付费流程。")
+                self.message("此条目没有可直接下载的支持格式；借阅、付费与 DRM 解锁流程尚不支持。")
             return
         dialog = Gtk.Dialog(title="下载并阅读", transient_for=self.window, modal=True)
         dialog.add_buttons("取消", Gtk.ResponseType.CANCEL, "下载并打开", Gtk.ResponseType.OK)
@@ -246,8 +262,11 @@ class OPDSMixin:
         def done(document, error):
             self.opds_set_busy(False)
             if error:
-                self.message(str(error) if isinstance(error, OPDSError) else "下载的图书无法打开，原有图书与进度保留")
-                self.status_label.set_text("未打开新图书；可重试或返回阅读")
+                if isinstance(error, LoadCancelled):
+                    self.status_label.set_text("书库请求已取消，原有图书与进度保留")
+                else:
+                    self.message(download_error_message(error))
+                    self.status_label.set_text("未打开新图书；可重试或返回阅读")
                 return
             self.document_loaded(document, None)
         self.submit(work, done)

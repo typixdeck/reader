@@ -13,7 +13,7 @@
       "zh-CN": "本地阅读与 Calibre OPDS 在线书库"
     },
     "description": {
-      "zh-CN": "完整 GTK3 阅读器，支持 TXT、Markdown、EPUB 与 CBZ，书架、目录、搜索和阅读进度。支持用户自己的 Calibre OPDS 分类、搜索、分页、认证与下载；没有内置测试书库。"
+      "zh-CN": "完整 GTK3 阅读器，支持 TXT、Markdown、EPUB、CBZ、PDF 与未加密 MOBI / PRC / AZW / AZW3，包含书架、目录、搜索和阅读进度。PDF 保留页面版式，Kindle 正文使用自己的文字阅读界面。支持用户自己的 Calibre OPDS 分类、搜索、分页、认证与下载；没有内置测试书库。"
     },
     "categories": [
       "Office"
@@ -34,7 +34,10 @@
       "/usr/lib/python3/dist-packages/typix_reader/state.py",
       "/usr/share/typix-reader/typix-reader.css",
       "/usr/lib/python3/dist-packages/typix_reader/opds.py",
-      "/usr/lib/python3/dist-packages/typix_reader/opds_ui.py"
+      "/usr/lib/python3/dist-packages/typix_reader/opds_ui.py",
+      "/usr/lib/python3/dist-packages/typix_reader/pdf_backend.py",
+      "/usr/lib/python3/dist-packages/typix_reader/pdf_worker.py",
+      "/usr/lib/python3/dist-packages/typix_reader/kindle.py"
     ],
     "compatibility": {
       "arch": [
@@ -50,9 +53,9 @@
     }
   },
   "release": {
-    "version": "0.3.0-1",
-    "file": "dist/typix-reader_0.3.0-1_all.deb",
-    "sha256": "b8c887b7cff113bd8982b54e05e548ad099d8e23d3c085f13206f0db40488ec9"
+    "version": "0.4.0-1",
+    "file": "dist/typix-reader_0.4.0-1_all.deb",
+    "sha256": "dcf8f16bd927f1259f4258850f89a84bd82acbd5bed4537792911c78edc74b9e"
   },
   "screenshots": [
     {
@@ -66,6 +69,10 @@
     {
       "path": "docs/screenshots/reader-opds.png",
       "caption": "使用原创条目的 OPDS 演示书库"
+    },
+    {
+      "path": "docs/screenshots/reader-pdf.png",
+      "caption": "CM4 独立 800×600 显示会话中的原创 PDF 页面"
     }
   ]
 }

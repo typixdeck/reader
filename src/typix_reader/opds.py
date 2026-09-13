@@ -28,7 +28,20 @@ XML_BASE = "{http://www.w3.org/XML/1998/namespace}base"
 MAX_FEED = 2 * 1024 * 1024
 MAX_DOWNLOAD = 128 * 1024 * 1024
 MAX_ENTRIES = 250
-FORMATS = {"application/epub+zip": ".epub", "text/plain": ".txt", "text/markdown": ".md", "text/x-markdown": ".md", "application/x-cbz": ".cbz", "application/vnd.comicbook+zip": ".cbz"}
+# Calibre's published MIME registry names MOBI7/PRC and KF8 separately.
+# https://github.com/kovidgoyal/calibre/blob/master/resources/mime.types
+FORMATS = {
+    "application/epub+zip": ".epub",
+    "text/plain": ".txt",
+    "text/markdown": ".md",
+    "text/x-markdown": ".md",
+    "application/x-cbz": ".cbz",
+    "application/vnd.comicbook+zip": ".cbz",
+    "application/pdf": ".pdf",
+    "application/x-mobipocket-ebook": ".mobi",
+    "application/x-mobi8-ebook": ".azw3",
+    "application/vnd.amazon.ebook": ".azw",
+}
 _OPEN_SLOTS = threading.BoundedSemaphore(2)
 
 ACQUIRE = {"http://opds-spec.org/acquisition", "http://opds-spec.org/acquisition/open-access"}

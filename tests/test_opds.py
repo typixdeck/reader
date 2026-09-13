@@ -21,7 +21,7 @@ FEED = b'''<feed xmlns="http://www.w3.org/2005/Atom"><title>Calibre Library</tit
 <link rel="next" type="application/atom+xml" href="?page=2"/>
 <entry><title>Books</title><content>All books</content><link type="application/atom+xml" href="/books"/></entry>
 <entry><title>Test Book</title><author><name>Author</name></author><link rel="http://opds-spec.org/acquisition" type="text/plain" href="/book.txt"/></entry>
-<entry><title>Unsupported</title><link rel="http://opds-spec.org/acquisition" type="application/pdf" href="/book.pdf"/></entry></feed>'''
+<entry><title>Unsupported</title><link rel="http://opds-spec.org/acquisition" type="application/vnd.comicbook-rar" href="/book.cbr"/></entry></feed>'''
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -73,7 +73,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Retry-After", "2")
             self.end_headers()
             return
-        payload = b"Chapter one\n\nA local reading fixture." if self.path in {"/book.txt", "/short"} else FEED
+        payload = b"Chapter one\n\nA local reading fixture." if self.path in {"/book.txt", "/short"} or self.path.startswith("/get/") else FEED
         if self.path == "/search.xml":
             payload = b'''<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><Url type="application/atom+xml;profile=opds-catalog" template="/opds/search?query={searchTerms}&amp;count={count?}"/></OpenSearchDescription>'''
         self.send_response(200)
@@ -120,6 +120,34 @@ class OPDSTests(unittest.TestCase):
         handler.do_open = Mock(return_value="response")
         self.assertEqual(handler.https_open("request"), "response")
         self.assertEqual(handler.do_open.call_args.kwargs, {"context": handler._context})
+
+    def test_pdf_and_kindle_acquisitions_download_with_correct_format(self):
+        # Calibre sends extensionless /get/<FORMAT>/<id> acquisition URLs.
+        # Selection must use the declared MIME, preserve all choices and save
+        # the correct suffix so the local Reader dispatches its own backend.
+        mime_formats = [("application/pdf", ".pdf"),
+                        ("application/x-mobipocket-ebook", ".mobi"),
+                        ("application/x-mobi8-ebook", ".azw3"),
+                        ("application/vnd.amazon.ebook", ".azw")]
+        links = ''.join(f'<link rel="http://opds-spec.org/acquisition" type="{mime}" href="/get/{extension[1:].upper()}/1"/>'
+                        for mime, extension in mime_formats)
+        xml = f'<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Original fixture</title>{links}</entry></feed>'.encode()
+        entry = parse_feed(xml, self.client.url).entries[0]
+        self.assertFalse(entry.unsupported)
+        self.assertEqual(len(entry.acquisitions), 4)
+        for link, (_mime, extension) in zip(entry.acquisitions, mime_formats):
+            with self.subTest(extension=extension):
+                downloaded = self.client.download(link, self.root, "Original fixture")
+                self.assertEqual(downloaded.suffix, extension)
+                self.assertEqual(downloaded.read_bytes(), b"Chapter one\n\nA local reading fixture.")
+
+    def test_unknown_mime_does_not_trust_pdf_suffix_or_enable_borrowing(self):
+        xml = b'''<feed xmlns="http://www.w3.org/2005/Atom">
+          <entry><title>Unknown</title><link rel="http://opds-spec.org/acquisition" type="application/octet-stream" href="/book.pdf"/></entry>
+          <entry><title>Borrow</title><link rel="http://opds-spec.org/acquisition/borrow" type="application/pdf" href="/borrow.pdf"/></entry>
+        </feed>'''
+        feed = parse_feed(xml, self.client.url)
+        self.assertTrue(all(entry.unsupported and not entry.acquisitions for entry in feed.entries))
 
     def test_opensearch_descriptor_and_calibre_query_links(self):
         link = Link(self.base + "/search.xml", "search", "application/opensearchdescription+xml")
@@ -202,7 +230,7 @@ class OPDSTests(unittest.TestCase):
         with self.assertRaises(LoadCancelled):
             self.client.browse(cancel=lambda: True)
         with self.assertRaises(OPDSError):
-            self.client.download(Link(self.base + "/pdf", "http://opds-spec.org/acquisition", "application/pdf"), self.root, "book")
+            self.client.download(Link(self.base + "/cbr", "http://opds-spec.org/acquisition", "application/vnd.comicbook-rar"), self.root, "book")
 
     def test_slow_header_can_be_cancelled_before_response_returns(self):
         cancelled = threading.Event()

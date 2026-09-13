@@ -17,6 +17,8 @@ from .formats import Document, LoadCancelled, ReaderFormatError, load_document, 
 from .navigation import find_next
 from .state import load_state, save_state
 from .opds_ui import OPDSMixin
+from .pdf_backend import render_pdf, search_pdf, stop_pdf_workers
+from .kindle import cancel_active_workers
 
 APP_ID = "ai.typixdeck.reader"
 
@@ -43,12 +45,20 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         self._jobs: queue.Queue = queue.Queue(maxsize=1)
         self._search_cursor: tuple[str, int, int] | None = None
         self._write_error = False
-        threading.Thread(target=self._worker, name="reader-loader", daemon=True).start()
+        self._pdf_zoom = 1.0
+        self._pdf_match = None
+        self._pdf_cursor = None
+        self._pdf_busy = False
+        self._loader = threading.Thread(target=self._worker, name="reader-loader", daemon=True)
+        self._loader.start()
         self.connect("shutdown", self.on_shutdown)
 
     def _worker(self) -> None:
         while True:
-            event, work, done = self._jobs.get()
+            job = self._jobs.get()
+            if job is None:
+                return
+            event, work, done = job
             if event.is_set():
                 continue
             try:
@@ -132,7 +142,7 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         header.pack_start(identity, True, True, 0)
         header.pack_start(self.button("在线书库", self.show_opds, "连接 Calibre OPDS 书库"), False, False, 0)
         header.pack_start(self.button("书架", self.show_shelf, "返回书架 · Esc"), False, False, 0)
-        header.pack_start(self.button("打开文件", self.choose_file, "打开本地 TXT / Markdown / EPUB / CBZ · Ctrl+O"), False, False, 0)
+        header.pack_start(self.button("打开文件", self.choose_file, "打开本地图书 · Ctrl+O"), False, False, 0)
         header.pack_start(self.button("返回桌面", self.close_reader, "保存进度并返回桌面 · Ctrl+Q"), False, False, 0)
         root.pack_start(header, False, False, 0)
 
@@ -216,13 +226,15 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         self.next_button = self.button("下一节", lambda: self.advance(1), "下一章节 / 图片页 · →")
         self.font_less = self.button("A−", lambda: self.change_font(-2), "缩小字体 · Ctrl+−")
         self.font_more = self.button("A+", lambda: self.change_font(2), "放大字体 · Ctrl++")
+        self.pdf_fit = self.button("适页", self.fit_pdf, "PDF 适合整页 · Ctrl+0")
+        self.pdf_fit.set_no_show_all(True)
         self.search_button = self.button("搜索", self.show_search, "全文搜索 · Ctrl+F；下一个 · F3")
         for button in (self.toc_button, self.previous_button, self.next_button):
             self.toolbar.pack_start(button, False, False, 0)
         self.location_label = self.label("", "muted")
         self.location_label.set_hexpand(True)
         self.toolbar.pack_start(self.location_label, True, True, 0)
-        for button in (self.font_less, self.font_more, self.search_button):
+        for button in (self.pdf_fit, self.font_less, self.font_more, self.search_button):
             self.toolbar.pack_start(button, False, False, 0)
         reading.pack_start(self.toolbar, False, False, 0)
         self.search_bar = Gtk.Box(spacing=8)
@@ -232,7 +244,7 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         self.search_entry.set_max_length(128)
         self.search_entry.set_placeholder_text("搜索全书文字…")
         self.search_entry.connect("activate", lambda _entry: self.search_next())
-        self.search_entry.connect("search-changed", lambda _entry: setattr(self, "_search_cursor", None))
+        self.search_entry.connect("changed", self.reset_search_cursor)
         self.search_bar.pack_start(self.search_entry, True, True, 0)
         self.search_bar.pack_start(self.button("查找下一个", self.search_next), False, False, 0)
         self.search_bar.pack_start(self.button("关闭", self.hide_search), False, False, 0)
@@ -276,6 +288,15 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         self.image.set_hexpand(True)
         self.image.set_vexpand(True)
         self.content_stack.add_named(self.image, "image")
+        self.pdf_scroll = Gtk.ScrolledWindow()
+        self.pdf_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        self.pdf_scroll.set_overlay_scrolling(False)
+        self.pdf_image = Gtk.Image()
+        self.pdf_image.set_can_focus(True)
+        self.pdf_image.set_halign(Gtk.Align.CENTER)
+        self.pdf_image.set_valign(Gtk.Align.START)
+        self.pdf_scroll.add_with_viewport(self.pdf_image)
+        self.content_stack.add_named(self.pdf_scroll, "pdf")
         self.content_stack.connect("size-allocate", self.on_content_size)
         self._image_size = (0, 0)
         self._image_source = 0
@@ -292,7 +313,7 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
     def choose_file(self) -> None:
         dialog = Gtk.FileChooserNative(title="打开本地图书", transient_for=self.window, action=Gtk.FileChooserAction.OPEN)
         dialog.set_local_only(True)
-        for name, patterns in (("支持的电子书", ("*.txt", "*.md", "*.markdown", "*.epub", "*.cbz")), ("所有文件", ("*",))):
+        for name, patterns in (("支持的电子书", ("*.txt", "*.md", "*.markdown", "*.epub", "*.cbz", "*.pdf", "*.mobi", "*.azw", "*.azw3", "*.prc")), ("所有文件", ("*",))):
             file_filter = Gtk.FileFilter()
             file_filter.set_name(name)
             for pattern in patterns:
@@ -322,7 +343,7 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         item = self.state.books.get(path, {})
         saved = self.state.position_for(item.get("sha256", ""))
         title = item.get("title", Path(path).stem)
-        unit = "页" if Path(path).suffix.lower() == ".cbz" else "节"
+        unit = "页" if Path(path).suffix.lower() in {".cbz", ".pdf"} else "节"
         progress = f"第 {saved.chapter + 1} / {item['length']} {unit}" if saved and item.get("length") else "点击打开"
         return title, f"{Path(path).suffix.lstrip('.').upper()}  ·  {progress}"
 
@@ -364,7 +385,7 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         else:
             self.resume_caption.set_text("开始阅读")
             self.resume_title.set_text("打开第一本书")
-            self.resume_detail.set_text("TXT · Markdown · EPUB · CBZ")
+            self.resume_detail.set_text("TXT · Markdown · EPUB · CBZ · PDF · Kindle")
             self.recent_list.pack_start(self.label("还没有阅读记录。图书与进度只保存在这台设备上。", "muted", True), False, False, 0)
         self.recent_list.show_all()
         self.resume_button.grab_focus()
@@ -397,7 +418,13 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
                 self.message(f"无法打开图书：{detail}")
             return
         self.document = document
+        self._restore_offset = None
         self._search_cursor = None
+        self._pdf_cursor = None
+        self._pdf_match = None
+        self._pdf_zoom = 1.0
+        self._pdf_busy = False
+        self.pdf_image.clear()
         self.hide_search()
         self.main_stack.set_visible_child_name("reading")
         self.title_label.set_text(document.title)
@@ -410,9 +437,16 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
             self.toc_store.append([document.chapters[index].title if document.kind == "text" else f"第 {index + 1} 页", index])
         self._toc_sync = False
         for widget in (self.font_less, self.font_more, self.search_button):
-            widget.set_sensitive(document.kind == "text")
+            widget.set_sensitive(document.kind in {"text", "pdf"})
+        self.font_less.set_label("−" if document.kind == "pdf" else "A−")
+        self.font_more.set_label("+" if document.kind == "pdf" else "A+")
+        self.font_less.set_tooltip_text("缩小页面 · Ctrl+−" if document.kind == "pdf" else "缩小字体 · Ctrl+−")
+        self.font_more.set_tooltip_text("放大页面 · Ctrl++" if document.kind == "pdf" else "放大字体 · Ctrl++")
+        self.pdf_fit.set_visible(document.kind == "pdf")
         if document.kind == "text":
             self.show_chapter(self.position, saved.offset if saved else 0, save_previous=False)
+        elif document.kind == "pdf":
+            self.show_pdf(self.position, save_previous=False)
         else:
             self.show_page(self.position, save_previous=False)
         self.remember(saved.offset if saved else 0)
@@ -425,7 +459,7 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
     def toggle_toc(self) -> None:
         if self.toc_scroll.get_visible():
             self.toc_scroll.hide()
-            self.text_view.grab_focus()
+            (self.pdf_image if self.document and self.document.kind == "pdf" else self.text_view).grab_focus()
         else:
             for child in self.toc_scroll.get_children():
                 child.show_all()
@@ -539,38 +573,102 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
 
         self.submit(decode, decoded)
 
+    def show_pdf(self, index: int, save_previous: bool = True, match=None) -> None:
+        if not self.document or self.document.kind != "pdf":
+            return
+        if save_previous:
+            self.save_progress()
+        document = self.document
+        page = max(0, min(index, document.length - 1))
+        width = max(64, self.content_stack.get_allocated_width() - 28)
+        height = max(64, self.content_stack.get_allocated_height() - 28)
+        zoom = self._pdf_zoom
+        self._pdf_busy = True
+        self.content_stack.set_visible_child_name("pdf")
+        self.status_label.set_text(f"正在显示 PDF 第 {page + 1} 页…Esc 可取消")
+
+        def decode(cancel):
+            rendered = render_pdf(document, page, width, height, zoom, match, cancel)
+            if cancel():
+                raise LoadCancelled()
+            loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+            loader.write(rendered["png"])
+            loader.close()
+            return loader.get_pixbuf(), rendered
+
+        def decoded(result, error):
+            self._pdf_busy = False
+            if error:
+                self.message(f"PDF 页面未更新：{error}")
+                self.update_location()
+                return
+            pixbuf, rendered = result
+            self.pdf_image.set_from_pixbuf(pixbuf)
+            self.position = page
+            self._pdf_match = match
+            self.select_toc()
+            self.update_location()
+            self.remember(0)
+            def scroll_result():
+                if self.document is not document or self.position != page:
+                    return False
+                horizontal, vertical = self.pdf_scroll.get_hadjustment(), self.pdf_scroll.get_vadjustment()
+                horizontal.set_value(0)
+                value = 0 if not match else max(0, (rendered["pageHeight"] - match[3]) * rendered["scale"] - vertical.get_page_size() * .3)
+                vertical.set_value(min(value, max(0, vertical.get_upper() - vertical.get_page_size())))
+                return False
+            GLib.idle_add(scroll_result)
+            if not self.search_bar.get_visible() and not self.toc_scroll.get_visible():
+                self.pdf_image.grab_focus()
+
+        self.submit(decode, decoded)
+
+    def fit_pdf(self) -> None:
+        if self.document and self.document.kind == "pdf":
+            self._pdf_zoom = 1.0
+            self.show_pdf(self.position, save_previous=False, match=self._pdf_match)
+
     def on_content_size(self, _widget, allocation) -> None:
         size = (allocation.width, allocation.height)
         if size == self._image_size:
             return
         self._image_size = size
-        if self.document and self.document.kind == "image":
+        if self.document and self.document.kind in {"image", "pdf"}:
             if self._image_source:
                 GLib.source_remove(self._image_source)
             self._image_source = GLib.timeout_add(180, self.resize_image)
 
     def resize_image(self) -> bool:
+        if self.document and self.document.kind == "pdf" and self._pdf_busy:
+            return True
         self._image_source = 0
         if self.document and self.document.kind == "image" and self.main_stack.get_visible_child_name() == "reading":
             self.show_page(self.position, save_previous=False)
+        elif self.document and self.document.kind == "pdf" and self.main_stack.get_visible_child_name() == "reading":
+            self.show_pdf(self.position, save_previous=False, match=self._pdf_match)
         return False
 
     def update_location(self) -> None:
         if not self.document:
             return
-        image = self.document.kind == "image"
+        image = self.document.kind in {"image", "pdf"}
         self.previous_button.set_label("上一页" if image else "上一节")
         self.next_button.set_label("下一页" if image else "下一节")
         self.previous_button.set_sensitive(self.position > 0)
         self.next_button.set_sensitive(self.position < self.document.length - 1)
         self.location_label.set_text(f"{self.position + 1} / {self.document.length}")
         self.status_label.set_text("← → 翻页  ·  Esc 返回书架" if image else f"← → 翻章  ·  空格 / PgDn 向下阅读  ·  Ctrl+F 搜索  ·  字号 {self.state.font_size}")
+        if self.document.kind == "pdf":
+            self.status_label.set_text(f"← → 翻页 · Ctrl+− / + 缩放 {round(self._pdf_zoom * 100)}% · Ctrl+0 适页 · Ctrl+F 搜索")
 
     def go_to(self, target: int) -> None:
         if not self.document or not 0 <= target < self.document.length:
             return
         if self.document.kind == "text":
             self.show_chapter(target)
+        elif self.document.kind == "pdf":
+            self._pdf_cursor = None
+            self.show_pdf(target)
         else:
             self.show_page(target)
 
@@ -583,7 +681,7 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         if self.document.kind == "image":
             self.advance(delta)
             return
-        adjustment = self.content_scroll.get_vadjustment()
+        adjustment = (self.pdf_scroll if self.document.kind == "pdf" else self.content_scroll).get_vadjustment()
         maximum = max(adjustment.get_lower(), adjustment.get_upper() - adjustment.get_page_size())
         value = adjustment.get_value()
         if delta > 0 and value >= maximum - 2:
@@ -639,6 +737,10 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         self.font_provider.load_from_data(f"#book-text text {{ font-size: {self.state.font_size}px; }}".encode())
 
     def change_font(self, delta: int) -> None:
+        if self.document and self.document.kind == "pdf":
+            self._pdf_zoom = max(0.5, min(4.0, round(self._pdf_zoom + delta / 8, 2)))
+            self.show_pdf(self.position, save_previous=False, match=self._pdf_match)
+            return
         if not self.document or self.document.kind != "text":
             return
         offset = self.current_offset()
@@ -650,7 +752,7 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         self.remember(offset)
 
     def show_search(self) -> None:
-        if self.document and self.document.kind == "text":
+        if self.document and self.document.kind in {"text", "pdf"}:
             for child in self.search_bar.get_children():
                 child.show()
             self.search_bar.show()
@@ -660,8 +762,13 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         self.search_bar.hide()
         if self.document and self.document.kind == "text":
             self.text_view.grab_focus()
+        elif self.document and self.document.kind == "pdf":
+            self.pdf_image.grab_focus()
 
     def search_next(self) -> None:
+        if self.document and self.document.kind == "pdf":
+            self.search_pdf_next()
+            return
         if not self.document or self.document.kind != "text":
             return
         query = self.search_entry.get_text().strip()
@@ -681,6 +788,31 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
                 self.show_match(query, match)
 
         self.submit(lambda cancel: find_next(document, query, chapter, offset, cancel), searched)
+
+    def reset_search_cursor(self, *_args) -> None:
+        self._search_cursor = None
+        self._pdf_cursor = None
+
+    def search_pdf_next(self) -> None:
+        query = self.search_entry.get_text().strip()
+        if not query:
+            self.show_search()
+            return
+        document, page, after = self.document, self.position, -1
+        if self._pdf_cursor and self._pdf_cursor[0] == query:
+            _, page, after = self._pdf_cursor
+        self._pdf_busy = True
+        self.status_label.set_text("正在搜索 PDF…Esc 可取消；扫描图片没有可搜索文字")
+        def searched(match, error):
+            self._pdf_busy = False
+            if error:
+                self.message(f"PDF 搜索未完成：{error}")
+            elif match is None:
+                self.status_label.set_text(f"未找到“{query}”；扫描图片需要另外进行 OCR")
+            else:
+                self._pdf_cursor = (query, match["page"], match["index"])
+                self.show_pdf(match["page"], match=match["rect"])
+        self.submit(lambda cancel: search_pdf(document, query, page, after, cancel), searched)
 
     def show_match(self, query, match) -> None:
         if match is None:
@@ -720,6 +852,17 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
         self.save_progress()
         self._closed = True
         self._cancel.set()
+        stop_pdf_workers()
+        cancel_active_workers()
+        try:
+            self._jobs.get_nowait()
+        except queue.Empty:
+            pass
+        self._jobs.put_nowait(None)
+        # Let native-request finally blocks remove their private temporary
+        # files before Python tears down daemon threads. Local decoding remains
+        # cooperative; shutdown never waits indefinitely for it.
+        self._loader.join(timeout=1)
 
     def on_key_press(self, _window: Gtk.Window, event: Gdk.EventKey) -> bool:
         control = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
@@ -729,6 +872,7 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
                        Gdk.KEY_f: self.show_search, Gdk.KEY_F: self.show_search,
                        Gdk.KEY_q: self.close_reader, Gdk.KEY_Q: self.close_reader,
                        Gdk.KEY_t: self.toggle_toc, Gdk.KEY_T: self.toggle_toc,
+                       Gdk.KEY_0: self.fit_pdf, Gdk.KEY_KP_0: self.fit_pdf,
                        Gdk.KEY_plus: lambda: self.change_font(2), Gdk.KEY_equal: lambda: self.change_font(2),
                        Gdk.KEY_minus: lambda: self.change_font(-2), Gdk.KEY_KP_Add: lambda: self.change_font(2),
                        Gdk.KEY_KP_Subtract: lambda: self.change_font(-2)}
@@ -742,7 +886,11 @@ class ReaderApplication(OPDSMixin, Gtk.Application):
                 self.opds_return()
             return True
         if key == Gdk.KEY_Escape:
-            if self.main_stack.get_visible_child_name() == "loading":
+            if self.main_stack.get_visible_child_name() == "reading" and self._pdf_busy:
+                self._cancel.set()
+                self._pdf_busy = False
+                self.status_label.set_text("PDF 操作已取消，原有页面与进度保留")
+            elif self.main_stack.get_visible_child_name() == "loading":
                 self.cancel_open()
             elif self.search_bar.get_visible():
                 self.hide_search()

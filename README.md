@@ -1,4 +1,4 @@
-# TypixReader 0.3
+# TypixReader 0.4
 
 面向 TypixDeck CM4 小屏和键盘的原生 GTK3 阅读器。支持官方 Raspberry Pi OS ARM64 Bookworm / Trixie；界面默认全屏，不需要浏览器或 Node；本地阅读可完全离线。
 
@@ -18,6 +18,10 @@
 
 使用原创条目的 OPDS 演示书库。
 
+![CM4 独立 800×600 显示会话中的原创 PDF 页面](docs/screenshots/reader-pdf.png)
+
+CM4 独立 800×600 显示会话中的原创 PDF 页面。
+
 <!-- app-screenshots:end -->
 
 ## 已实现
@@ -27,13 +31,15 @@
 - TXT / Markdown：UTF-8（含 BOM）、GB18030、Big5；Markdown 一级至三级标题生成目录，正文以可读纯文本显示。
 - EPUB：按 OPF spine 顺序读取本地 XHTML 文字，保留行内文字顺序、抽取章节标题，长章分段；不执行脚本、加载远程图片或使用 EPUB CSS。
 - CBZ：数字自然顺序排列图片页，逐页后台读取和解码，按当前可用宽高适配；不会把整本漫画的图片载入内存。
-- 全书文字搜索、结果高亮和循环查找；目录跳转；16–34 px 字号。
+- PDF：使用 Poppler / Cairo 保留文字、矢量图形和图片的真实页面，整页适配、放大滚动、页码目录、全文搜索与页内高亮；记住上次页码。
+- 未加密 MOBI / PRC、AZW / AZW3：使用 libmobi 提取正文，进入 Reader 自己的文字阅读界面，复用目录、搜索、字号和续读。
+- 全书文字搜索、结果高亮和循环查找；目录跳转；文字模式支持 16–34 px 字号。
 - 记忆章节 / 漫画页和正文视口顶部字符位置；字体偏好保存在本机。
 - 打开、解析、搜索和漫画解码在可取消的后台工作线程执行；过期任务不能覆盖新图书。
 - 文件缺失、权限不足、格式损坏、加密、资源超限均显示可恢复提示；打开失败保留当前图书。
 - 写入失败时可继续阅读并提示检查存储 / 权限，之后继续尝试保存。状态原子替换失败时保留旧文件。
 
-本阶段支持 TXT、MD / Markdown、EPUB、CBZ。PDF、CBR、MOBI / AZW、FB2、TTS、EPUB 排版 / 内嵌图片尚未实现，不能用这个版本替代它们的系统阅读器。
+支持 TXT、MD / Markdown、EPUB、CBZ、PDF 与未加密 MOBI / PRC / AZW / AZW3。CBR、FB2、TTS、DRM 图书、KFX、Topaz、Kindle Print Replica 和 Kindle 固定图像版式尚不支持；EPUB / Kindle 使用文字重排，不承诺还原原书全部视觉排版与内嵌图片。
 
 ## Calibre 在线书库
 
@@ -41,13 +47,21 @@
 
 - 浏览 OPDS 1 Atom 分类和图书详情，通过面包屑返回分类；按服务器链接切换前后页。
 - 搜索标题、作者以及服务器支持的 Calibre 查询；兼容直接查询链接与 OpenSearch 模板。
-- EPUB、TXT、Markdown、CBZ 可下载到本机并立即交给现有阅读器打开，随后正常保存阅读进度；本地同名图书不会被覆盖。
-- PDF、MOBI / AZW 等不支持的格式显示明确提示；借阅、付费与 OPDS 2 尚不支持。
+- EPUB、TXT、Markdown、CBZ、PDF 和未加密 MOBI / AZW / AZW3 可下载到本机并立即交给自己的阅读界面打开，随后正常保存阅读进度；本地同名图书不会被覆盖。
+- 未支持或加密的格式显示明确提示；借阅、付费与 OPDS 2 尚不支持。
 - 目录、登录、搜索和下载都在后台执行。取消、断网、认证失败、服务器限流或磁盘不足时保留正在阅读的图书；可刷新、重试或重新登录。
 
 账号密码只保留在当前应用会话内。`opds.json` 只保存标准 `/opds` 地址，不保存登录信息；自定义路径可能含令牌，因此不会记住，也不接受 URL 中的账号密码或查询令牌。所有目录、下载和重定向必须保持同一来源，避免把登录信息发送给其他服务器。只在用户操作时请求对应书库，不发送本地图书或阅读记录，不读取环境代理设置。
 
 协议依据：[Calibre Content server 文档](https://manual.calibre-ebook.com/server.html)和 [OPDS 1.2 规范](https://specs.opds.io/opds-1.2.html)。
+
+## PDF 与 Kindle 阅读
+
+PDF 保留原页面布局；“− / +”调整适合页面比例的 50%–400% 缩放，“适页”恢复整页显示，放大后可滚动。目录列出页码，左右键翻页；搜索可跨页查找文字并高亮下一处。扫描图片可以显示，但没有 OCR 文字层时不能搜索。加密或需要密码的 PDF 会明确拒绝，请提供自己拥有权限的未加密副本。PDF 链接、JavaScript、附件与表单动作不执行。
+
+PDF 原生解析、渲染和搜索在可取消的独立子进程中执行；每次只保留一页输出，后台处理失败不会改写源文件。输入最多 128 MiB / 1,000 页；渲染最多 800 万像素、单边 4,096 像素。进程限制为 512 MiB 地址空间、25 秒 CPU 时间、32 MiB 输出文件；显示操作最多等待 20 秒，跨页搜索最多 30 秒。按 Esc 取消会终止并回收该次 PDF 进程，保留原有页面和阅读记录。采用官方 [Poppler GLib 页面接口](https://poppler.freedesktop.org/api/glib/poppler-Poppler-Page.html)。
+
+Kindle 支持未加密 MOBI7 / PRC 和 KF8 / AZW / AZW3，混合版本优先使用 KF8。`libmobi-tools` 在临时目录重建 EPUB，再由 Reader 自己解析文字，不启动其他阅读器、不联网。DRM、非 MOBI 容器及不支持的固定版式会给出说明；输入最多 256 MiB，重建 EPUB 最多 128 MiB，操作最多 45 秒，取消后清理临时文件。阅读进度仍与原始图书关联。
 
 ## 键盘
 
@@ -55,13 +69,14 @@
 | --- | --- |
 | 打开本地文件 | Ctrl+O |
 | 选择按钮 / 图书 | Tab / Shift+Tab，Enter |
-| 上一 / 下一章节，或漫画页 | ← / →（正文或图片获得焦点时） |
+| 上一 / 下一章节，或 PDF / 漫画页 | ← / →（正文或图片获得焦点时） |
 | 向上 / 下滚动一屏，章尾进入下一章 | PageUp / PageDown，Shift+Space / Space |
 | 目录 | Ctrl+T；目录内 ↑ / ↓ 跳章 |
 | 搜索全文 | Ctrl+F；Enter / F3 查找下一个 |
-| 调整字号 | Ctrl+− / Ctrl++ |
+| 调整字号，或 PDF 缩放 | Ctrl+− / Ctrl++ |
+| PDF 适合整页 | Ctrl+0 |
 | 关闭搜索 / 返回书架，再返回桌面 | Esc |
-| 在线书库取消请求 / 返回原来图书 | Esc |
+| PDF 取消处理；在线书库取消请求 / 返回原来图书 | Esc |
 | 保存进度并返回桌面 | Ctrl+Q，或右上角“返回桌面” |
 | 重新请求全屏 | F11 |
 
@@ -99,7 +114,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 ./build-deb.sh
 ```
 
-产物为 `dist/typix-reader_0.3.0-1_all.deb`。纯 Python 包声明 `Architecture: all`；依赖 `python3 (>= 3.11), python3-gi, gir1.2-gtk-3.0, gir1.2-gdkpixbuf-2.0, ca-certificates`；control 字段 `X-Typix-Compatible-OS: raspios-bookworm,raspios-trixie` 用于 Registry 严格匹配。CM4 ARM64 是主验收目标，其它硬件不作型号假设。
+产物为 `dist/typix-reader_0.4.0-1_all.deb`。纯 Python 包声明 `Architecture: all`；依赖 `python3 (>= 3.11), python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-gdkpixbuf-2.0, gir1.2-poppler-0.18, libmobi-tools (>= 0.11), ca-certificates`；control 字段 `X-Typix-Compatible-OS: raspios-bookworm,raspios-trixie` 用于 Registry 严格匹配。CM4 ARM64 是主验收目标，其它硬件不作型号假设。
 
 在真机已登录的 GTK3 / Wayland 会话中执行隔离 QA（输出目录应为专用测试目录）：
 
@@ -110,7 +125,16 @@ PYTHONPATH=src READER_QA_SCREENSHOT_COMMAND=grim /usr/bin/python3 tests/gtk_opds
 
 脚本使用独立 QA Application ID、临时图书和单独状态文件，验证全屏、书架、目录、跨章搜索、字号、滚动续读、CBZ 顺序 / 视口适配 / 续读、文件缺失及取消恢复；输出 `result.json` 和截图。未设置截图环境变量时不调用 `grim`。测试不会读取现有用户书架。
 
-本次验证通过 47 项单元测试、21 项原有 GTK 检查和 19 项 OPDS GTK 检查，覆盖 Basic / Digest、分类、搜索、分页、XML / 下载资源限制、跨源拒绝、慢响应头取消、下载后打开、旧文件保护和本地阅读回归。CM4 真机还通过临时用户书库的主页、分类、分页、命中搜索以及 EPUB 格式链接检查；该服务的无结果搜索返回 HTTP 404、部分分类返回 HTTP 500，客户端显示可恢复错误。未从该服务器下载或公开图书内容；完整下载流程使用受控原创测试文件验证。
+0.3 验证通过 47 项单元测试、21 项原有 GTK 检查和 19 项 OPDS GTK 检查，覆盖 Basic / Digest、分类、搜索、分页、XML / 下载资源限制、跨源拒绝、慢响应头取消、下载后打开、旧文件保护和本地阅读回归。CM4 真机还通过临时用户书库的主页、分类、分页、命中搜索以及 EPUB 格式链接检查；该服务的无结果搜索返回 HTTP 404、部分分类返回 HTTP 500，客户端显示可恢复错误。未从该服务器下载或公开图书内容；完整下载流程使用受控原创测试文件验证。
+
+0.4 已在 CM4 通过 80 项单元测试（包含 9 项 PDF、18 项 Kindle 边界与原生转换测试，以及 4 项 OPDS 解析错误提示回归），并在隔离 800×600 Labwc 会话通过 21 项 PDF GTK 检查，覆盖实际矢量页、缩放、搜索、页码续读、坏文件、加密和取消；另有 46 项受控 OPDS 新格式检查通过，验证 PDF / MOBI / AZW / AZW3 下载后进入自己的阅读界面与续读，覆盖 MOBI7 / KF8 跨章搜索与正文高亮，并用实际加密 PDF 下载验证明确错误提示、原书与位置、内存及磁盘阅读状态完整保留；原有 21 项本地 GTK 回归继续通过。可运行以下隔离检查，它不会连接物理显示会话：
+
+```sh
+PYTHONPATH=src /usr/bin/python3 tests/run_headless.py tests/gtk_pdf_smoke.py /tmp/reader-pdf-qa
+PYTHONPATH=src /usr/bin/python3 tests/run_headless.py tests/gtk_opds_formats_smoke.py /tmp/reader-opds-formats-qa
+```
+
+隔离 GTK 检查额外使用系统的 `labwc`、`dbus-run-session`、`wlr-randr` 和 `grim`，应用运行不依赖这些测试工具。
 
 `tests/gtk_opds_showcase.py` 使用自创短文和本机演示目录生成书架、阅读、在线书库截图；不读取现有用户书架。截图为 CM4 物理 1024×768、逻辑约 801×601 的实际 GTK 输出。
 

@@ -54,10 +54,12 @@ class Document:
     # CBZ pages are ZIP member names, never a whole comic resident in RAM.
     images: tuple[str, ...] = ()
     sha256: str = ""
+    pages: int = 0
+    source_stamp: tuple[int, ...] = ()
 
     @property
     def length(self) -> int:
-        return len(self.chapters) if self.kind == "text" else len(self.images)
+        return len(self.chapters) if self.kind == "text" else self.pages if self.kind == "pdf" else len(self.images)
 
 
 def _regular_file(path: Path, limit: int) -> None:
@@ -331,7 +333,13 @@ def load_document(path: Path, cancel: CancelCheck = None) -> Document:
     suffix = path.suffix.lower()
     parsers = {".txt": load_text, ".md": load_text, ".markdown": load_text,
                ".epub": load_epub, ".cbz": load_cbz}
+    if suffix == ".pdf":
+        from .pdf_backend import load_pdf
+        parsers[suffix] = load_pdf
+    if suffix in {".mobi", ".azw", ".azw3", ".prc"}:
+        from .kindle import load_kindle
+        parsers[suffix] = load_kindle
     if suffix not in parsers:
-        raise ReaderFormatError(f"暂不支持 {suffix or '无扩展名文件'}；可打开 TXT、Markdown、EPUB 和 CBZ")
+        raise ReaderFormatError(f"暂不支持 {suffix or '无扩展名文件'}；可打开 TXT、Markdown、EPUB、CBZ、PDF 和未加密 Kindle 图书")
     _regular_file(path, MAX_FILE_BYTES)
     return parsers[suffix](path, cancel)
